@@ -93,7 +93,9 @@ async function getperfectmentor(time, role, duration, date) {
     }
     if (availabilityResult.length === 1) {
       return availabilityResult[0].id;
+    } else {
     }
+
     console.log(availabilityResult);
 
     return true; // Return the availability result for further use

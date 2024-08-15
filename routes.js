@@ -282,6 +282,19 @@ router.post(
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
+      const mentor = await getperfectmentor(time, role, duration, date);
+      const price = await getprice(duration);
+      const payemntid = await getpaymentid(
+        user.id,
+        mentor.id,
+        price,
+        role,
+        duration,
+        date,
+        time,
+        mentor.email,
+        user.emailAddresses[0].emailAddress
+      );
 
       // const transactions = await getTransactions(user.id);
 
