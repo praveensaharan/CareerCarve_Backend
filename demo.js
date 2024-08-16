@@ -16,8 +16,8 @@ async function main() {
     await sendSessionEmails(
       "praveensaharan2002@gmail.com", // mentor's email
       "praveen40109@gmail.com", // user's email
-      "2024-08-23", // session date
-      formatTimeTo12Hour("04:05:00"), // session time
+      "2024-08-16", // session date
+      formatTimeTo12Hour("16:50:00"), // session time
       "30 min" // session duration
     );
   } catch (error) {
