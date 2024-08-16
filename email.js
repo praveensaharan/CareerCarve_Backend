@@ -42,7 +42,7 @@ async function sendSessionEmails(
     const template = await fs.promises.readFile(htmlFilePath, "utf8");
 
     const customizedHtml = template
-      .replace("${time}", time)
+      .replace("${time}", time.replace(/AM|PM/g, ""))
       .replace("${morn}", time.includes("AM") ? "AM" : "PM")
       .replace("${duration}", duration)
       .replace(

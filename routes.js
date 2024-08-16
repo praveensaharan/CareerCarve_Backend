@@ -35,8 +35,9 @@ router.get("/fetchmentor", ClerkExpressRequireAuth({}), async (req, res) => {
     const userInfo = {
       id: user.id,
       email: user.emailAddresses[0].emailAddress,
-      firstName: user.firstName,
+      firstName: user.firstName || user.emailAddresses[0].emailAddress,
     };
+
     const credits = await getOrCreateUserMentor(
       userInfo.id,
       userInfo.firstName,
@@ -63,7 +64,7 @@ router.get("/fetchstudent", ClerkExpressRequireAuth({}), async (req, res) => {
     const userInfo = {
       id: user.id,
       email: user.emailAddresses[0].emailAddress,
-      firstName: user.firstName,
+      firstName: user.firstName || user.emailAddresses[0].emailAddress,
     };
 
     const result = await getOrCreateUserStudent(
