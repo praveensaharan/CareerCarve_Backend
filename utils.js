@@ -333,18 +333,319 @@ async function getstudentid(clerkid) {
   }
 }
 
+async function getMentorforpay(id, date) {
+  try {
+    const result = await sql`
+      SELECT 
+        m.id AS mentor_id,
+        m.name,
+        m.roles,
+        m.rating,
+        a.date,
+        a.start_time,
+        a.end_time
+      FROM 
+        mentors m
+      LEFT JOIN 
+        availability a
+      ON 
+        m.id = a.mentor_id
+      WHERE
+        m.id = ${id}
+      ORDER BY 
+        a.date, a.start_time;
+    `;
+
+    if (!result || result.length === 0) {
+      return null;
+    }
+
+    const mentorData = {
+      id: result[0].mentor_id,
+      availability: [],
+    };
+
+    result.forEach((row) => {
+      if (
+        row.date &&
+        row.start_time &&
+        row.end_time &&
+        row.date.toISOString().split("T")[0] === date
+      ) {
+        mentorData.availability.push({
+          date: row.date.toISOString().split("T")[0],
+          startTime: row.start_time.slice(0, 5),
+          endTime: row.end_time.slice(0, 5),
+        });
+      }
+    });
+
+    if (mentorData.availability.length === 0) {
+      return null;
+    }
+
+    return mentorData;
+  } catch (error) {
+    console.error("Error fetching mentor and availability:", error.message);
+    throw new Error("Internal Server Error");
+  }
+}
+
+async function getperfectmentor(time, role, duration, date) {
+  try {
+    const mentorResult = await sql`
+      SELECT id, roles FROM mentors;
+    `;
+
+    const matchingMentorIds = [];
+
+    for (const mentor of mentorResult) {
+      const rolesArray = mentor.roles.split(",").map((role) => role.trim());
+      if (rolesArray.includes(role)) {
+        matchingMentorIds.push(mentor.id);
+      }
+    }
+
+    if (matchingMentorIds.length === 0) {
+      throw new Error(`No mentor found for the role: ${role}`);
+    }
+
+    const availabilityResult = [];
+
+    for (const mentorId of matchingMentorIds) {
+      const availability = await getMentorforpay(mentorId, date);
+      if (availability !== null) {
+        availabilityResult.push(availability);
+      }
+    }
+
+    if (availabilityResult.length === 0) {
+      return null;
+    }
+
+    const classTimeInMinutes =
+      parseInt(time.split(":")[0]) * 60 + parseInt(time.split(":")[1]);
+    const durationInMinutes = parseInt(duration.split(" ")[0]);
+
+    let bestMentorId = null;
+    let minTimeDifference = Infinity;
+
+    for (const availability of availabilityResult) {
+      for (const slot of availability.availability) {
+        const startTimeInMinutes =
+          parseInt(slot.startTime.split(":")[0]) * 60 +
+          parseInt(slot.startTime.split(":")[1]);
+        const endTimeInMinutes =
+          parseInt(slot.endTime.split(":")[0]) * 60 +
+          parseInt(slot.endTime.split(":")[1]);
+
+        if (
+          classTimeInMinutes >= startTimeInMinutes &&
+          classTimeInMinutes + durationInMinutes <= endTimeInMinutes
+        ) {
+          const timeDifference = classTimeInMinutes - startTimeInMinutes;
+          if (timeDifference >= 0 && timeDifference < minTimeDifference) {
+            minTimeDifference = timeDifference;
+            bestMentorId = availability.id;
+          }
+        }
+      }
+    }
+
+    if (bestMentorId === null) {
+      throw new Error(
+        "No suitable mentor found for the given time and duration"
+      );
+    }
+
+    return bestMentorId; // Return the best mentor ID
+  } catch (error) {
+    console.error("Error finding the perfect mentor:", error.message);
+    throw new Error("Database query failed");
+  }
+}
+
+async function getpaymentid(
+  studentId,
+  mentorId,
+  price,
+  role,
+  duration,
+  date,
+  time,
+  mentorEmail,
+  userEmail
+) {
+  try {
+    // Insert the payment details into the payment table
+    const [payment] = await sql`
+      INSERT INTO payment (
+        student_id,
+        mentor_id,
+        price,
+        role,
+        duration,
+        date,
+        time,
+        mentor_email,
+        user_email,
+        paid
+      ) VALUES (
+        ${studentId}, 
+        ${mentorId}, 
+        ${price}, 
+        ${role}, 
+        ${duration}, 
+        ${date}, 
+        ${time}, 
+        ${mentorEmail}, 
+        ${userEmail}, 
+        FALSE -- Initially set to unpaid
+      )
+      RETURNING id;
+    `;
+
+    return payment.id; // Return the generated payment ID
+  } catch (error) {
+    console.error("Error inserting payment record:", error.message);
+    throw new Error("Database query failed");
+  }
+}
+async function getfullmentordata(id) {
+  try {
+    const result = await sql`
+      SELECT * FROM  mentors WHERE id = ${id};
+    `;
+
+    // Check if the result exists and has at least one row
+    if (result.length === 0) {
+      return null; // Return null if no mentor is found with the given ID
+    }
+
+    return result[0]; // Return the first (and likely only) result
+  } catch (error) {
+    console.error("Error fetching mentor data:", error.message);
+    throw new Error("Internal Server Error");
+  }
+}
+
+async function getpaymentbyid(id) {
+  try {
+    const result = await sql`
+      SELECT * FROM payment WHERE id = ${id};
+    `;
+
+    if (result.length === 0) {
+      return { error: "Payment not found" }; // Return an object with an error message if no payment is found
+    }
+
+    if (result[0].paid === true) {
+      return { message: "Payment already made" }; // Return an object with a message if the payment is already paid
+    }
+
+    return result[0]; // Return the first (and likely only) result
+  } catch (error) {
+    console.error("Error fetching payment data:", error.message);
+    throw new Error("Internal Server Error");
+  }
+}
+
+async function getpaymentDone(id) {
+  try {
+    const paymentResult = await sql`
+      SELECT * FROM payment WHERE id = ${id};
+    `;
+    if (paymentResult.length === 0) {
+      return { error: "Payment not found" };
+    }
+
+    if (paymentResult[0].paid === true) {
+      return { message: "Payment already made" };
+    }
+
+    await sql`
+      UPDATE payment SET paid = true WHERE id = ${id};
+    `;
+    const {
+      student_id: studentId,
+      mentor_id: mentorId,
+
+      role,
+      duration,
+      date,
+      time,
+      mentor_email: mentorEmail,
+      user_email: userEmail,
+
+      created_at: createdAt,
+    } = paymentResult[0];
+
+    // Insert the session into the sessions table
+    const startDateTime = `${date} ${time}`; // Combine date and time for session start
+    await sql`
+      INSERT INTO sessions (
+        student_id, 
+        mentor_id, 
+        date, 
+        duration, 
+        role, 
+        payment_id
+      ) VALUES (
+        ${studentId}, 
+        ${mentorId}, 
+        ${startDateTime}, 
+        ${duration}, 
+        ${role}, 
+        ${id}
+      );
+    `;
+
+    // Update mentor availability: find the mentorId and date, then update the start_time
+    const newEndTime = calculateNewEndTime(time, duration);
+    await sql`
+      UPDATE availability 
+      SET start_time = ${newEndTime} 
+      WHERE mentor_id = ${mentorId} 
+      AND date = ${date};
+    `;
+
+    return { message: "Payment processed and session scheduled" };
+  } catch (error) {
+    console.error("Error processing payment:", error.message);
+    throw new Error("Internal Server Error");
+  }
+}
+
+// Helper function to calculate new end time based on start time and duration
+function calculateNewEndTime(startTime, duration) {
+  const [hours, minutes] = startTime.split(":").map(Number);
+  const [durationValue, durationUnit] = duration.split(" ");
+
+  let endHours = hours;
+  let endMinutes = minutes;
+
+  if (durationUnit === "min") {
+    endMinutes += parseInt(durationValue);
+  } else if (durationUnit === "hour" || durationUnit === "hr") {
+    endHours += parseInt(durationValue);
+  }
+
+  // Adjust hours and minutes if minutes exceed 59
+  if (endMinutes >= 60) {
+    endHours += Math.floor(endMinutes / 60);
+    endMinutes = endMinutes % 60;
+  }
+
+  // Ensure time is in the format HH:MM
+  const formattedHours = String(endHours).padStart(2, "0");
+  const formattedMinutes = String(endMinutes).padStart(2, "0");
+
+  return `${formattedHours}:${formattedMinutes}`;
+}
+
 module.exports = {
   getPgVersion,
-  findCompanyByPattern,
-  printTableContents,
-  findCompaniesByIds,
-  verifyCompanyEmails,
 
-  getTheArray,
-  getTransactions,
-  AddCompanyIdToUser,
-  redeemCoupon,
-  getInsights,
   getMentors,
   getMentor,
   getSessionMentor,
@@ -355,4 +656,9 @@ module.exports = {
   getmentorid,
   getstudentid,
   getOrCreateUserStudent,
+  getperfectmentor,
+  getpaymentid,
+  getfullmentordata,
+  getpaymentbyid,
+  getpaymentDone,
 };
