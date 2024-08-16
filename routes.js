@@ -279,7 +279,6 @@ router.post(
     try {
       // Extract request body parameters
       const { time, role, duration, date } = req.body;
-      console.log("Request Parameters:", { time, role, duration, date });
 
       // Fetch user details from Clerk
       const user = await clerkClient.users.getUser(req.auth.userId);
