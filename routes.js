@@ -232,8 +232,6 @@ router.get("/sessionmentor", ClerkExpressRequireAuth({}), async (req, res) => {
     if (!mentor) {
       return res.status(404).json({ error: "Mentor session data not found" });
     }
-
-    console.log(`Mentor ID: ${mentorId}, Mentor Data:`, mentor);
     res.json(mentor);
   } catch (err) {
     console.error("Error in /sessionmentor route:", err);
@@ -262,7 +260,6 @@ router.get("/sessionstudent", ClerkExpressRequireAuth({}), async (req, res) => {
       return res.status(404).json({ error: "Student session data not found" });
     }
 
-    console.log(`Student ID: ${studentId}, Student Data:`, student);
     res.json(student);
   } catch (err) {
     console.error("Error in /sessionstudent route:", err);
@@ -432,26 +429,21 @@ router.get("/payment", ClerkExpressRequireAuth({}), async (req, res) => {
       return res.status(400).json({ error: "Payment ID is required" });
     }
 
-    // Fetch user information using Clerk client
     const user = await clerkClient.users.getUser(req.auth.userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Fetch payment details using the provided ID
     const payment = await getpaymentbyid(id);
 
-    // Check if an error or specific message was returned
     if (payment.error) {
       return res.status(404).json({ error: payment.error });
     } else if (payment.message) {
       return res.status(200).json({ message: payment.message });
     }
 
-    // Respond with the payment details
     res.json(payment);
   } catch (err) {
-    // Handle unexpected errors
     console.error("Error fetching payment data:", err.message);
     res.status(500).json({ error: "Internal Server Error" });
   }

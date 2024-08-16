@@ -2,6 +2,7 @@
 const sql = require("./db");
 const axios = require("axios");
 const { EMAIL_VERIFY } = require("./envSetup");
+const { sendSessionEmails } = require("./email");
 
 async function getPgVersion() {
   try {
@@ -550,6 +551,34 @@ async function getpaymentbyid(id) {
   }
 }
 
+function formatTimeTo12Hour(time) {
+  const [hour, minute, second] = time.split(":");
+  const hourInt = parseInt(hour, 10);
+  const ampm = hourInt >= 12 ? "PM" : "AM";
+  const adjustedHour = hourInt % 12 || 12; // Convert '00' hour to '12' and 24-hour to 12-hour format
+  return `${adjustedHour}:${minute} ${ampm}`;
+}
+
+// Function to send emails with session details
+async function emailssend(mentor_email, user_email, date, time, duration) {
+  try {
+    const formattedTime = formatTimeTo12Hour(time); // Format the time to 12-hour format
+
+    await sendSessionEmails(
+      mentor_email, // mentor's email
+      user_email, // user's email
+      date, // session date
+      formattedTime, // formatted session time
+      duration // session duration
+    );
+
+    return true; // Return true if emails are sent successfully
+  } catch (error) {
+    console.error("Error sending emails:", error.message);
+    throw new Error("Internal Server Error");
+  }
+}
+
 async function getpaymentDone(id) {
   try {
     const paymentResult = await sql`
@@ -563,51 +592,63 @@ async function getpaymentDone(id) {
       return { message: "Payment already made" };
     }
 
-    await sql`
-      UPDATE payment SET paid = true WHERE id = ${id};
-    `;
     const {
       student_id: studentId,
       mentor_id: mentorId,
-
       role,
       duration,
       date,
       time,
-      mentor_email: mentorEmail,
-      user_email: userEmail,
-
-      created_at: createdAt,
     } = paymentResult[0];
 
-    // Insert the session into the sessions table
-    const startDateTime = `${date} ${time}`; // Combine date and time for session start
+    let startDateTime = new Date(
+      `${new Date(date).toISOString().split("T")[0]}T${time}Z`
+    );
+
+    startDateTime.setMinutes(startDateTime.getMinutes() + 330);
+
+    const formattedDateTime = startDateTime
+      .toISOString()
+      .replace("T", " ")
+      .split(".")[0];
+
     await sql`
       INSERT INTO sessions (
-        student_id, 
-        mentor_id, 
-        date, 
-        duration, 
-        role, 
-        payment_id
+        student_id,
+        mentor_id,
+        date_time,
+        duration,
+        role,
+        order_id
       ) VALUES (
-        ${studentId}, 
-        ${mentorId}, 
-        ${startDateTime}, 
-        ${duration}, 
-        ${role}, 
+        ${studentId},
+        ${mentorId},
+        ${formattedDateTime}::TIMESTAMP,
+        ${duration},
+        ${role},
         ${id}
       );
     `;
 
-    // Update mentor availability: find the mentorId and date, then update the start_time
     const newEndTime = calculateNewEndTime(time, duration);
+
     await sql`
-      UPDATE availability 
-      SET start_time = ${newEndTime} 
-      WHERE mentor_id = ${mentorId} 
+      UPDATE availability
+      SET start_time = ${newEndTime}
+      WHERE mentor_id = ${mentorId}
       AND date = ${date};
     `;
+
+    await sql`
+      UPDATE payment SET paid = true WHERE id = ${id};
+    `;
+    await emailssend(
+      paymentResult[0].mentor_email,
+      paymentResult[0].user_email,
+      paymentResult[0].date,
+      paymentResult[0].time,
+      paymentResult[0].duration
+    );
 
     return { message: "Payment processed and session scheduled" };
   } catch (error) {
@@ -645,7 +686,6 @@ function calculateNewEndTime(startTime, duration) {
 
 module.exports = {
   getPgVersion,
-
   getMentors,
   getMentor,
   getSessionMentor,

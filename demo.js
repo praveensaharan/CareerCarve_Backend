@@ -1,109 +1,29 @@
 const sql = require("./db");
-async function getpaymentDone(id) {
-  try {
-    const paymentResult = await sql`
-      SELECT * FROM payment WHERE id = ${id};
-    `;
-    if (paymentResult.length === 0) {
-      return { error: "Payment not found" };
-    }
-
-    if (paymentResult[0].paid === true) {
-      return { message: "Payment already made" };
-    }
-
-    await sql`
-      UPDATE payment SET paid = true WHERE id = ${id};
-    `;
-    const {
-      student_id: studentId,
-      mentor_id: mentorId,
-
-      role,
-      duration,
-      date,
-      time,
-      mentor_email: mentorEmail,
-      user_email: userEmail,
-
-      created_at: createdAt,
-    } = paymentResult[0];
-
-    // Insert the session into the sessions table
-    const startDateTime = `${date} ${time}`; // Combine date and time for session start
-    await sql`
-      INSERT INTO sessions (
-        student_id, 
-        mentor_id, 
-        date, 
-        duration, 
-        role, 
-        payment_id
-      ) VALUES (
-        ${studentId}, 
-        ${mentorId}, 
-        ${startDateTime}, 
-        ${duration}, 
-        ${role}, 
-        ${id}
-      );
-    `;
-
-    // Update mentor availability: find the mentorId and date, then update the start_time
-    const newEndTime = calculateNewEndTime(time, duration);
-    await sql`
-      UPDATE availability 
-      SET start_time = ${newEndTime} 
-      WHERE mentor_id = ${mentorId} 
-      AND date = ${date};
-    `;
-
-    return { message: "Payment processed and session scheduled" };
-  } catch (error) {
-    console.error("Error processing payment:", error.message);
-    throw new Error("Internal Server Error");
-  }
-}
+const { sendSessionEmails } = require("./email");
 
 // Helper function to calculate new end time based on start time and duration
-function calculateNewEndTime(startTime, duration) {
-  const [hours, minutes] = startTime.split(":").map(Number);
-  const [durationValue, durationUnit] = duration.split(" ");
-
-  let endHours = hours;
-  let endMinutes = minutes;
-
-  if (durationUnit === "min") {
-    endMinutes += parseInt(durationValue);
-  } else if (durationUnit === "hour" || durationUnit === "hr") {
-    endHours += parseInt(durationValue);
-  }
-
-  // Adjust hours and minutes if minutes exceed 59
-  if (endMinutes >= 60) {
-    endHours += Math.floor(endMinutes / 60);
-    endMinutes = endMinutes % 60;
-  }
-
-  // Ensure time is in the format HH:MM
-  const formattedHours = String(endHours).padStart(2, "0");
-  const formattedMinutes = String(endMinutes).padStart(2, "0");
-
-  return `${formattedHours}:${formattedMinutes}`;
+function formatTimeTo12Hour(time) {
+  const [hour, minute, second] = time.split(":");
+  const hourInt = parseInt(hour, 10);
+  const ampm = hourInt >= 12 ? "PM" : "AM";
+  const adjustedHour = hourInt % 12 || 12; // Convert '00' hour to '12' and 24-hour to 12-hour format
+  return `${adjustedHour}:${minute} ${ampm}`;
 }
 
 async function main() {
   try {
-    const result = await getperfectmentor(
-      "16:29",
-      "Digital Marketing",
-      "30 min",
-      "2024-08-24"
+    // Call sendSessionEmails with your session details
+    await sendSessionEmails(
+      "praveensaharan2002@gmail.com", // mentor's email
+      "praveen40109@gmail.com", // user's email
+      "2024-08-23", // session date
+      formatTimeTo12Hour("04:05:00"), // session time
+      "30 min" // session duration
     );
-    console.log("Perfect Mentor ID:", result);
   } catch (error) {
-    console.error("Error in main function:", error.message);
+    console.error("Error in sending session emails:", error);
   }
+  console.log("Perfect Mentor ID:");
 }
 
 main();
